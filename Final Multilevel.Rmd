@@ -1,0 +1,300 @@
+---
+title: "Project EDA"
+author: "Kshitij Gurung"
+date: "11/10/2019"
+output:
+  word_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r, include=TRUE}
+library(readr)
+library(dplyr)
+library(mosaic)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra) 
+library(MASS)
+library(mnormt)
+library(lme4)
+library(knitr)
+```
+
+#1. Reading the datasets:
+```{r, include=TRUE}
+listing <- read.csv("/home/rstudio/courses/2019-20-semester1-stats-316/Project/Kshitij-Rayan-Maggie/listings.csv")
+dim(listing) #6716  106
+# reviews <- read.csv("/home/rstudio/courses/2019-20-semester1-stats-316/Project/Kshitij-Rayan-Maggie/reviews.csv")
+# dim(reviews) # 142341      6
+```
+#Cleaning variables:
+```{r}
+# Selecting improtant varibales from listing data set
+final_listing <- as_tibble(listing)%>%
+  dplyr::select(id, host_id, host_name, number_of_reviews, reviews_per_month, price,review_scores_rating, review_scores_accuracy, 
+         review_scores_cleanliness, review_scores_checkin, review_scores_communication,review_scores_location, 
+         review_scores_value,  host_since,  host_location, host_is_superhost,  host_response_time, host_response_rate,
+                     host_listings_count, host_has_profile_pic, host_identity_verified, zipcode, latitude,
+         longitude,is_location_exact, property_type, room_type, accommodates, bedrooms, beds, bed_type, amenities, 
+         square_feet,
+         security_deposit, cleaning_fee, guests_included, extra_people, minimum_nights, maximum_nights)%>%
+  mutate(average_6_ratings = (review_scores_accuracy+review_scores_cleanliness+review_scores_checkin+
+                            review_scores_communication+review_scores_location+review_scores_value)/6)%>%
+  arrange(host_id)%>%
+  mutate(bin_rating=ifelse(average_6_ratings<10,"0","1"))%>%
+  mutate(bin_rating=as.factor(bin_rating))%>%
+  mutate(host_superhost=as.factor(host_is_superhost))
+  
+#   mutate(count_id = count(host_id))
+# final_listing$avg_6_rating = rowSums(final_listing[1:5,8:13], na.rm = TRUE)/length(!is.na(final_listing[ ,8:13]))
+# final_listing$a_rating = mean(final_listing[,8:13])
+
+#Variables parsing
+##Price
+final_listing$price <- as.character(final_listing$price)
+final_listing$price <- parse_number(final_listing$price)
+##host_response_rate
+final_listing$host_response_rate <- as.character(final_listing$host_response_rate)
+final_listing$host_response_rate<- with(final_listing, str_sub( host_response_rate,1,-2))
+final_listing$host_response_rate<-parse_number(final_listing$host_response_rate)
+##security_deposit
+final_listing$security_deposit <- as.character(final_listing$security_deposit)
+final_listing$security_deposit <- parse_number(final_listing$security_deposit)
+##cleaning_fee and extra people\
+final_listing$cleaning_fee <- as.character(final_listing$cleaning_fee)
+final_listing$cleaning_fee <- parse_number(final_listing$cleaning_fee)
+# host_response_time
+final_listing$response_time = as.character(final_listing$host_response_time)
+final_listing$response_time = ifelse(final_listing$response_time=="N/A", NA, final_listing$response_time)
+final_listing$response_time = as.factor(final_listing$response_time)
+
+#data set of host with more than 1 property
+try <- final_listing%>%
+  dplyr::group_by(host_id)%>%
+  count(host_id)%>%
+  right_join(final_listing, key="host_id")%>%
+  filter(n>1)%>%
+filter(price<500)%>%
+  mutate(z_price = (price-mean(price, na.rm= TRUE))/sd(price, na.rm = TRUE))%>%
+  mutate(super_host = ifelse(host_is_superhost=="f","f", ifelse(host_is_superhost=="t","t",NA)))%>%
+mutate(host_response_rate =host_response_rate/10)
+  
+try$z_cleaningfee = (try$cleaning_fee-mean(try$cleaning_fee, na.rm= TRUE))/sd(try$cleaning_fee, na.rm = TRUE)
+try$response_time = ifelse(try$response_time =="within an hour",1,0)
+try$z_listing_count = (try$host_listings_count-mean(try$host_listings_count,na.rm=TRUE))/sd(try$host_listings_count, na.rm=TRUE)
+
+# ggplot(try, aes(x = n))+ geom_histogram(binwidth = .5)
+
+cor(try[,c(7,36)], use="complete.obs")
+# 0.584, this is not a high correaltion
+
+```
+
+##Level 1
+
+
+```{r}
+#LEVEL 1 VARIABLES: price, room type, property type, is location exact, bed type, accomodates, bedrooms, beds, ameniries, square_feets, secirotu deppsite, cleaning, guests, extra.
+#try[complete.cases(try[ , 42]),]
+# try$bin_rating<-try[(which(is.na(try$bin_rating)))]
+
+## Histogram for prices
+price.all <- ggplot(final_listing,aes(x=price)) + 
+  geom_histogram(fill = "white",color = "black") +
+  xlab("price") + ylab("Frequency") + labs(title = "Property Price distribution ") 
+price.all
+summary(try$price)
+price.try <- ggplot(try,aes(x=price)) + 
+  geom_histogram(fill = "white",color = "black") +
+  xlab("price") + ylab("Frequency") + labs(title = "Property Price distribution ") 
+price.try
+grid.arrange(price.all, price.try, ncol=2)
+
+# boxplot of price vs binrating
+try%>%
+  filter(!is.na(price))%>%
+  filter(price<500)%>%
+  filter(!is.na(bin_rating))%>%
+ggplot()+ 
+  geom_boxplot(aes(y=price, x=as.character(bin_rating)), na.rm=TRUE) + xlab("review category") + ylab("Price") + ylim(0,500) + labs(title = " Price vs  Review Rating")+
+  coord_flip()
+favstats(~price|bin_rating, data=try)
+
+#Room type
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# filterting out only two room types
+try1<- try%>%
+  filter(room_type == 'Entire home/apt' | room_type=='Private room')
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+try1%>%
+  filter(!is.na(bin_rating))%>%
+ggplot(aes(x=room_type,fill = bin_rating)) + 
+  geom_bar(position = "fill") + xlab("Room type") + ylab("frequency") 
+table1 <- table(try$room_type,try$bin_rating)
+addmargins(table1)
+prop.table(table1)
+# fitered room type bar chart
+try1%>%
+  filter(!is.na(room_type), room_type!=0)%>%
+  filter(!is.na(bin_rating))%>%
+ggplot(aes(x=room_type,fill = bin_rating)) + 
+  geom_bar(position = "fill") + xlab("bin_rating") + ylab("frequency") + labs(title = "Barplot of room type review category")
+
+#Is location exact: 
+try1%>%
+  filter(!is.na(is_location_exact))%>%
+  filter(!is.na(bin_rating))%>%
+ggplot(aes(x=is_location_exact,fill = bin_rating)) + 
+  geom_bar(position = "fill") + xlab("Location accurary") + ylab("frequency") 
+addmargins(table2)
+prop.table(table2)
+
+# cleaning fees
+favstats(~cleaning_fee|bin_rating, data=try)
+ggplot(data=try, aes(y=cleaning_fee, x=bin_rating)) + 
+  geom_boxplot() + xlab("review category") + ylab("Cleaning fee") + ylim(0, 500)+ labs(title = "Figure 2.2: Boxplot for cleaning fees in different review categories")
+```
+
+
+##Level 2
+
+
+```{r}
+try.lev2 <-  try %>%
+  group_by(host_id) %>%
+  filter(row_number() == 1)%>%
+  dplyr::select(host_id,n,host_name, host_since, host_response_rate,host_response_time, host_is_superhost, 
+         host_listings_count, host_has_profile_pic, host_identity_verified)%>%
+  mutate(response_time = ifelse(host_response_time =="within an hour",1,0))
+
+# Add average across all performances for each subject for EDA plots
+meanbyhost <- try %>% group_by(host_id) %>%
+  summarise(meanbyhost= mean(average_6_ratings, na.rm = TRUE))%>%
+  mutate(bin_rating=ifelse(meanbyhost<9.9,"Low Rating","High Rating"))
+try.lev2 <- try.lev2 %>%
+  left_join(meanbyhost, by = "host_id")
+try.lev2<-try.lev2%>%
+  mutate(host_response_time=as.character(host_response_time))%>%
+  mutate(host_response_time1 = ifelse(host_response_time=="N/A", NA, host_response_time)
+    )
+
+table(try.lev2$bin_rating)
+try.lev2 <- na.omit(try.lev2)
+#level 2 EDA
+ ggplot(data=try.lev2,aes(x=host_response_rate)) + 
+  geom_histogram(binwidth = 1, fill = "white", color = "black")  +
+  xlab("Response Rate") + ylab("Frequency") + labs(title="histogram of Host's response rate (level2)")
+ggplot(data=try.lev2,aes(x=host_response_rate, fill = bin_rating)) + 
+  geom_bar(binwidth = 10) +
+  xlab("Response Rate") + ylab("Frequency") + labs(title="histogram of Host's response rate (level2)")
+# Look at relationships among Level 2 covariates and negative affect
+#   (again ignoring correlation)
+ ggplot(data=try.lev2,aes(y= host_response_rate, x =  bin_rating)) +
+  geom_boxplot()
+# Hosts reponse time 
+ ggplot(data=try.lev2) + 
+  geom_bar(aes(x=as.character(host_response_time1, na.rm = TRUE), fill = bin_rating)) +
+  xlab("Response Rate") + ylab("Frequency") + labs(title="histogram of Host's response rate (level2)")
+
+ a<-ggplot(data=try.lev2,aes(x=host_response_time1, fill = bin_rating, na.rm = TRUE)) + 
+  geom_bar(position = 'fill', na.rm = TRUE) +
+  xlab("Response Rate") + ylab("Frequency") + labs(title="histogram of Host's response rate (level2)") 
+
+b<-ggplot(data=try.lev2) + 
+  geom_bar(aes(x=as.character(response_time, na.rm = TRUE), fill = bin_rating)) +
+  xlab("Response Rate") + ylab("Frequency") + labs(title="histogram of Host's response rate (level2)")
+grid.arrange(a,b,ncol=2)
+#  host is super host
+ ggplot(data=try.lev2) + 
+  geom_bar(aes(x=as.character(host_is_superhost , na.rm = TRUE), fill = bin_rating)) +
+  xlab(" Super Host") + ylab("Frequency")
+#  host identity verified
+ ggplot(data=try.lev2,aes(x=as.character(host_identity_verified , na.rm = TRUE), fill = bin_rating)) +
+  geom_bar(position = "fill") +
+  xlab("Response Rate") + ylab("Frequency") + labs(title="histogram of Host's response rate (level2)") 
+```
+
+
+
+
+# Model fitting
+
+
+```{r}
+#Model A (Unconditional means model), we allow for variablity in the intersect 
+
+# try$bin_rating1 <- ifelse(try$bin_rating=="High Rating",1,0)
+model.a <- glmer(bin_rating~ 1 + (1|host_id), data=try, family = binomial(link="logit"))
+summary(model.a)
+exp(fixef(model.a))
+
+#Model b: Level 1 covariate
+model.b1 <- glmer(bin_rating ~ z_price+ (1|host_id),data=try, family =binomial(link="logit"))
+summary(model.b1)
+exp(fixef(model.b1))
+
+model.b2 <- glmer(bin_rating ~ z_price + super_host+ z_price:super_host+(z_price|host_id),data=try, family =binomial(link="logit"))
+summary(model.b2) # interaction is insignificant
+
+model.b3 <- glmer(bin_rating ~ z_price + super_host+ z_cleaningfee+ z_price:super_host+(z_price|host_id),data=try, family =binomial(link="logit"))
+summary(model.b3)
+
+# included L1 more is_location_exact
+model.c1<- glmer(bin_rating ~ z_price + is_location_exact + super_host+ (z_price+is_location_exact|host_id),data=try, family =binomial(link="logit"))
+summary(model.c1)
+
+model.c2<- glmer(bin_rating ~ z_price + is_location_exact + super_host+ is_location_exact:super_host+ (z_price+is_location_exact|host_id),data=try, family =binomial(link="logit"))
+summary(model.c2) # adding interaction turns all the predictors significant.
+
+
+# adding L1 roomtype  
+model.d1 <- glmer(bin_rating ~z_price+ is_location_exact+ room_type+ super_host+
+                    + (1|host_id), data=try, family = binomial(link="logit"))
+summary(model.d1) # hotel room seems insignificant. Also hotel and shared room consists of below 3% of the entired observation. So we will try excluding them in our further model
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# filterting out only two room types
+try1<- try%>%
+  filter(room_type == 'Entire home/apt' | room_type=='Private room')
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+model.d2 <- glmer(bin_rating ~z_price+ is_location_exact+ room_type+ super_host+
+                    + (1|host_id), data=try1, family = binomial(link="logit"))
+summary(model.d2)
+
+model.d3 <- glmer(bin_rating ~z_price+ is_location_exact+ room_type+ super_host+host_response_time
+                    + (1|host_id), data=try1, family = binomial(link="logit"))
+summary(model.d3)
+model.d4 <- glmer(bin_rating ~z_price+ is_location_exact+ room_type+ super_host+response_time
+                    + (1|host_id), data=try1, family = binomial(link="logit"))
+summary(model.d4)
+
+
+# adding L2 host listing counts
+
+model.e1<- glmer(bin_rating ~z_price+ is_location_exact+ room_type+ super_host+ z_listing_count
+                    + (1|host_id), data=try1, family = binomial(link="logit"))
+summary(model.e1)
+# FINAL MODEL
+model.final<-glmer(bin_rating ~ z_price + is_location_exact + room_type+ super_host+
+                       z_listing_count+ (1|host_id),data=try1, family
+                  =binomial(link="logit"))
+summary(model.final)
+exp(fixef(model.final))
+
+model.final.1 <- glmer(bin_rating ~ z_price + room_type + is_location_exact + super_host +
+                         z_listing_count + (z_price+is_location_exact|host_id),
+                       data=try1, family
+                  =binomial(link="logit"))
+summary(model.final.1)
+# Anova Chisq test
+anova(model.final.1, model.final)
+#exponentiated coeff of final model
+exp(fixef(model.try.final))
+
+```
+
+
+
+

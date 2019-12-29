@@ -1,0 +1,117 @@
+---
+title: "AirBnB Zero Inflation Poisson Model"
+author: "Maggie Upjohn"
+date: "11/24/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=TRUE}
+library(readr)
+library(dplyr)
+library(mosaic)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra) 
+library(MASS)
+library(lme4)
+library(knitr)
+library(pscl)
+```
+
+#1. Reading the datasets:
+```{r, include=TRUE}
+listing <- read.csv("/home/rstudio/courses/2019-20-semester1-stats-316/Project/Kshitij-Rayan-Maggie/listings.csv")
+dim(listing) #6716  106
+reviews <- read.csv("/home/rstudio/courses/2019-20-semester1-stats-316/Project/Kshitij-Rayan-Maggie/reviews.csv")
+dim(reviews) # 142341      6
+```
+#Cleaning variables:
+```{r}
+#Variables parsing
+##Price
+listing$price <- as.character(listing$price)
+listing$finalprice <- parse_number(listing$price)
+##host_response_rate
+listing$host_response_rate <- as.character(listing$host_response_rate)
+listing$host_response_rate<- with(listing, str_sub( host_response_rate,1,-2))
+listing$host_response_rate<-as.integer(listing$host_response_rate)
+##security_deposit
+listing$security_deposit <- as.character(listing$security_deposit)
+listing$security_deposit <- parse_number(listing$security_deposit)
+##cleaning_fee and extra people\
+listing$cleaning_fee <- as.character(listing$cleaning_fee)
+listing$cleaning_fee <- parse_number(listing$cleaning_fee)
+
+```
+
+Host Response Time
+
+```{r, echo=FALSE}
+listing %>% 
+    group_by(room_type) %>% 
+    summarise_(n = ~n()) %>% 
+    mutate(prop = prop.table(n))
+
+review_scores_ratinghist <-listing %>%
+  ggplot(mapping= aes(review_scores_rating)) +
+           geom_histogram()
+review_scores_ratinghist
+```
+```{r}
+finalpricehist <-listing %>%
+  ggplot(mapping= aes(finalprice)) +
+           geom_histogram()
+finalpricehist
+```
+
+
+Host Response Rate
+
+```{r, echo=FALSE}
+favstats(listing$host_response_rate)
+
+host_response_ratehist <-listing %>%
+  ggplot(mapping= aes(host_response_rate)) +
+           geom_histogram()
+host_response_ratehist
+
+```
+
+```{r}
+airbnbzipmodel <- listing %>%
+  filter(!is.na(host_response_rate))
+```
+
+```{r}
+airbnbreviews <-zeroinfl(formula = number_of_reviews_ltm ~ review_scores_rating + finalprice+ room_type | host_response_rate, data = airbnbzipmodel)
+
+summary(airbnbreviews)
+
+exp(coef(airbnbreviews)
+```
+
+```{r}
+poisAIRBNB <- glm(number_of_reviews_ltm ~ review_scores_rating + finalprice+ room_type, family=poisson, data=airbnbzipmodel)
+summary(poisAIRBNB)
+
+vuong(poisAIRBNB,airbnbreviews)
+```
+
+
+For the properties that had at least one person leave a review, the average number of reviews increases by 2.39% with each additional increase in review score rating, given that you are comparing properties with comparable prices and room type.
+
+For the properties that had at least one person leave a review, the average number of reviews increases by 0.1% with each additional increase in price, given that you are comparing properties with comparable review scores and room types.
+
+
+Overdispersion parameter
+
+
+
+
+
