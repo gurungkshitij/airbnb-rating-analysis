@@ -1,6 +1,5 @@
 ---
 title: "AirBnB Zero Inflation Poisson Model"
-author: "Maggie Upjohn"
 date: "11/24/2019"
 output:
   word_document: default
