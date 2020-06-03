@@ -15,4 +15,5 @@ In this project we plan to accomplish two main goals:
 - Change the dataset directories in Rmarkdown files before running the file.
 - AirBnB Zero Inflation Poisson Model.Rmd is the code for predicting number of reviews. 
 - Final Multilevel.Rmd is the code for predicting quality of ratings. 
+- The final report of our work in under [FinalReport-Airbnb.pdf](https://github.com/gurungkshitij/airbnb-rating-analysis/blob/master/FinalReport-Airbnb.pdf)
 
